@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>The tidyverse for Machine Learning</title>
+    <meta charset="utf-8">
+    <meta name="author" content="" />
+    <script src="libs/kePrint/kePrint.js"></script>
+    <link rel="stylesheet" href="xaringan-themer.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+
+
+class: middle, center
+
+
+
+
+
+.pull-left[
+
+# **The `tidyverse` for Machine Learning**
+
+### Bruna Wundervald &lt;br&gt; Maynooth University
+
+#### R-Ladies Helsinki Meetup, June 2020
+
+
+]
+
+.pull-right[
+
+&lt;div class="row"&gt;
+
+&lt;div class="column"&gt;
+&lt;img src="https://raw.githubusercontent.com/rstudio/hex-stickers/5fc34f4a5775bcefb5c31c33d750c435c4871a84/SVG/ggplot2.svg" width="100"&gt;
+&lt;/div&gt;
+
+&lt;div class="column"&gt;
+&lt;img src="https://raw.githubusercontent.com/rstudio/hex-stickers/5fc34f4a5775bcefb5c31c33d750c435c4871a84/SVG/dplyr.svg" width="150"&gt;
+&lt;/div&gt;
+
+&lt;div class="column"&gt;
+&lt;img src="https://raw.githubusercontent.com/rstudio/hex-stickers/5fc34f4a5775bcefb5c31c33d750c435c4871a84/SVG/purrr.svg" width="100"&gt;
+  &lt;/div&gt;
+  
+&lt;div class="column"&gt;
+&lt;img src="https://raw.githubusercontent.com/rstudio/hex-stickers/5fc34f4a5775bcefb5c31c33d750c435c4871a84/SVG/tibble.svg" width="100"&gt;
+  &lt;/div&gt;  
+  
+&lt;div class="column"&gt;
+&lt;img src="https://raw.githubusercontent.com/rstudio/hex-stickers/5fc34f4a5775bcefb5c31c33d750c435c4871a84/SVG/tidymodels.svg" width="100"&gt;
+  &lt;/div&gt;  
+&lt;/div&gt;
+]
+
+---
+class: inverse, middle
+
+
+
+.pull-left[
+
+&lt;img style="border-radius: 100%;" src="https://github.com/brunaw.png" width="250px"/&gt;
+
+
+  - Ph.D. Candidate in Statistics at the 
+  [Hamilton Institute, Maynooth University](https://www.maynoothuniversity.ie/hamilton)
+  
+  - Especially interested in tree-based models:
+    - Regularization for tree-based models
+    - Bayesian Additive Regression Trees (BART)
+
+]
+
+.pull-right[
+
+# Find me
+
+[GitHub: @brunaw](http://github.com/brunaw)  
+[Site: http://brunaw.com/](http://brunaw.com/)  
+[Twitter: @bwundervald](http://twitter.com/bwundervald)  
+
+]
+
+
+---
+class: middle
+
+
+# Summary
+
+- Tree-based models
+- Gain penalization for tree regularization
+- The data
+- Modelling:
+  - Train and test splits
+  - Creating a model list
+  - Building a modelling function
+  - Training all models 
+  - Evaluating the models
+  
+#### Find this talk at: http://brunaw.com/slides/rladies-helsinki/talk.html
+
+#### GitHub: https://github.com/brunaw/tidyverse-for-ml
+
+---
+
+
+# Motivation
+
+Using the `tidyverse` for Machine Learning gives us:
+
+- All tools needed 
+- Clear &amp; consistent syntax
+- Reproducibility advantages: all elements of our models 
+in only one object 
+  - Train and test sets, tuning parameters, models used, 
+  evaluation metrics, etc
+
+# Basic ML Steps
+
+  - Train and test separation
+  - Model definition
+  - Model evaluation
+
+---
+class: inverse, middle
+
+# Tree-based models
+
+---
+# Tree-based models
+
+.pull-left[
+&lt;img src="img/trees.png" width="80%" height="30%" style="display: block; margin: auto;" /&gt;
+]
+
+
+.pull-right[
+Suppose we have a response variable `\(Y\)` (continuous or class), and
+a set of predictor variables `\(\mathbf{X}\)`. 
+
+- Trees stratify the predictors'space into regions 
+- Uses binary splitting rules to find the regions
+
+&lt;img src="img/vars_space2.png" width="80%" height="30%" style="display: block; margin: auto;" /&gt;
+
+
+]
+
+
+
+---
+
+# Trees: the algorithm
+
+Recursive binary splitting: 
+
+
+  1. Select the predictor `\(X_j\)` and the cutpoint `\(s\)` such that 
+the split `\(\{X | X_j &lt;  s\}\)` and `\(\{X | X_j \geq  s\}\)` leads to
+the greatest reduction in the variance of `\(Y\)`. 
+    - All predictors and all available cutpoints are tested
+  
+  2. For each region found, predict either the mean of `\(Y\)` in the region
+(continuous case) or the most common class (classification case). 
+
+  3. Continue until some criterion is reached
+    - Example: continue until no region contains more than 5 observations
+    
+
+---
+
+# Gain penalization for tree regularization
+
+- Firstly presented in Deng and Runger (2013):
+  - The authors **penalise the gain (RSS reduction)** of each 
+  variable, for each tree when building a model
+
+- The main idea is to weigh the gain of each variable, with
+
+`$$\begin{equation} Gain_{R}(X_i, v) =  \begin{cases} \lambda_i Gain(X_i, v), i \notin F \text{ and} \\ Gain(X_i, v), i \in F,  \end{cases} \end{equation}$$`
+
+
+where `\(F\)` represents the set of indices used in the previous nodes and 
+`\(\lambda_i \in (0, 1]\)` is the penalization applied to the splitting. 
+
+
+- The variables will only get picked if their gain is **very** high. 
+
+
+More details:  *Wundervald, B, A. Parnell, and K. Domijan (2020). “Generalizing Gain Penalization for Feature Selection in Tree-based Models”. In: arXiv e-prints, p. arXiv:2006.07515. arXiv: 2006.07515*
+
+---
+### Modelling: tree-based methods
+
+  - Trees (CART): 1 tree, `\(\texttt{mtry}\)` = # all available variables
+  
+  - *Bagging*: average of many trees, `\(\texttt{mtry}\)` = # all available variables
+  
+  - Regularized *Bagging*: same as above, but with a
+  variable gain penalized by a factor between 0 and 1 
+  
+  - Regularized *Bagging*, with depth penalization: 
+  same as above, but with an "extra" penalization when a new variable
+ is to be picked in a deep node of a tree:
+ 
+`$$\begin{equation} Gain_{R}(\mathbf{X}_{i}, t, \mathbb{T}) =  \begin{cases} \lambda_{i}^{d_{\mathbb{T}}} \Delta(i, t), \thinspace i \notin F \text{ and} \\ \Delta(i, t), \thinspace i \in  F, \end{cases} \end{equation}$$`
+
+where `\(d_{\mathbb{T}}\)` is the current depth of the `\(\mathbb{T}\)` tree, 
+`\(\mathbb{T} = (1, \dots, \texttt{ntree})\)`, for the `\(i\)`-th feature.
+  
+  
+
+  - Random Forest: average of many trees, `\(\texttt{mtry} \approx \sqrt{\text{# all available variables}}\)`
+  
+- Regularized Random Forests: average of many trees, `\(\texttt{mtry} \approx \text{# all available variables}/2\)`, 
+  variable gain penalized by a factor between 0 and 1
+
+- Regularized Random Forests with depth penalization: same 
+ as above, but with an "extra" penalization when a new variable
+ is to be picked in a deep node of a tree
+ 
+
+---
+# The data
+
+- Target variable (**ridership**): daily number of people entering the Clark and Lake train station in Chicago (in thousands)
+
+
+&gt; Goal: to predict this variable and find the optimal variables
+for that
+
+- 50 Predictors:
+  - Current date  
+  - The 14-day lagged ridership at this and other stations (units: thousands of rides/day)
+  - Weather information
+  - Sport teams schedules
+  - +
+
+
+
+
+
+---
+class: middle
+
+# Loading data and visualizing
+
+.pull-left[
+
+
+```{r
+library(tidyverse)
+library(tidymodels)
+library(ranger) # for tree-based models
+
+data &lt;- dials::Chicago
+
+data %&gt;%  
+  ggplot(aes(x = ridership)) +
+  geom_density(fill = "#ff6767", alpha = 1) +
+  labs(x = "Target Variable", y = "Density") +
+  theme_classic(18) 
+```
+
+
+
+
+
+]
+
+.pull-right[
+
+&lt;img src="img/density.png" width="60%" style="display: block; margin: auto;" /&gt;
+]
+
+---
+class: middle
+
+
+- Interesting distribution!
+- Good for tree-based models
+
+&lt;img src="img/density_boxes.png" width="60%" style="display: block; margin: auto;" /&gt;
+
+---
+class: inverse, middle
+
+# Modelling
+
+
+
+---
+
+# Step 1. Train (75%) and test (25%) splits
+
+
+```{r
+data_tibble &lt;- rep(list(data), 10) %&gt;% 
+  enframe(name = 'index', value = 'data') %&gt;% 
+  mutate(train_test = purrr::map(data, initial_split, prop = 3/4))
+```
+
+
+```
+# A tibble: 10 x 3
+  index data                  train_test         
+  &lt;int&gt; &lt;list&gt;                &lt;list&gt;             
+1     1 &lt;tibble [5,698 × 50]&gt; &lt;split [4.3K/1.4K]&gt;
+2     2 &lt;tibble [5,698 × 50]&gt; &lt;split [4.3K/1.4K]&gt;
+3     3 &lt;tibble [5,698 × 50]&gt; &lt;split [4.3K/1.4K]&gt;
+# … with 7 more rows
+```
+
+
+
+- The `train_test` column is a list with two elements: the train and test sets
+
+
+---
+
+# Step 2. Creating our model list 
+
+
+```{r
+models &lt;- list(
+ tree = list(mtry = ncol(data) - 1, trees = 1, reg.factor = 1, depth = FALSE),
+ 
+ bagging = list(mtry = ncol(data) - 1, trees = 100, reg.factor = 1, depth = FALSE), 
+ 
+ bagging_reg = list(mtry = ncol(data) - 1, trees = 100, reg.factor = 0.7, depth = FALSE),
+ 
+ bagging_reg_dep = list(mtry = ncol(data) - 1, trees = 100, reg.factor = 0.7, depth = TRUE), 
+ 
+ forest = list(mtry = sqrt(ncol(data) - 1), trees = 100, reg.factor = 1, depth = FALSE),
+ 
+ reg_forest =  list(mtry = (ncol(data) - 1)/2, trees = 100, reg.factor = 0.7, depth = FALSE),
+ 
+ reg_forest_dep =  list(mtry = (ncol(data) - 1)/2, trees = 100, reg.factor = 0.7, depth = TRUE),
+ 
+ reg_forest2 =  list(mtry = (ncol(data) - 1)/2, trees = 100, reg.factor = 0.2, depth = FALSE), 
+ 
+ reg_forest_dep2 = list(mtry = (ncol(data)-1)/2, trees = 100, reg.factor = 0.2, depth = TRUE)) %&gt;% 
+ enframe(name = 'model', value = 'parameters')
+```
+
+
+
+
+
+
+---
+
+class: middle
+
+Adding the models to our main `tibble`:
+
+```{r
+data_tibble &lt;- data_tibble %&gt;% 
+*  crossing(models) %&gt;% 
+   arrange(model)
+```
+
+
+# What do we have so far?
+
+A tibble with:
+  - All the train and test data
+  - Their combinations with the all the model configurations
+
+
+```
+# A tibble: 90 x 5
+  index data                  train_test          model   parameters      
+  &lt;int&gt; &lt;list&gt;                &lt;list&gt;              &lt;chr&gt;   &lt;list&gt;          
+1     1 &lt;tibble [5,698 × 50]&gt; &lt;split [4.3K/1.4K]&gt; bagging &lt;named list [4]&gt;
+2     2 &lt;tibble [5,698 × 50]&gt; &lt;split [4.3K/1.4K]&gt; bagging &lt;named list [4]&gt;
+3     3 &lt;tibble [5,698 × 50]&gt; &lt;split [4.3K/1.4K]&gt; bagging &lt;named list [4]&gt;
+# … with 87 more rows
+```
+
+---
+
+# Step 3. Building a modelling function 
+
+  - We will use the `ranger` package through the `parsnip` interface
+  - There are main arguments and package-specific arguments to be
+  set
+  
+```{r
+modelling &lt;- function(train, mtry = NULL, trees = NULL, 
+                      reg.factor = 1, depth = FALSE, 
+                      formula = ridership ~ ., mode = "regression") {
+  
+  model_setup &lt;- parsnip::rand_forest(mode = mode, mtry = mtry, trees = trees) %&gt;% 
+    parsnip::set_engine("ranger", regularization.factor = reg.factor, 
+                                  regularization.usedepth = depth)
+
+  us_hol &lt;- timeDate::listHolidays() %&gt;% str_subset("(^US)|(Easter)")
+  # Recipe 
+  rec &lt;- recipe(formula, data = train) %&gt;% 
+    step_holiday(date, holidays = us_hol) %&gt;%  # Include US holidays
+    step_date(date) %&gt;% step_rm(date) 
+  # Preparation
+  preps &lt;- prep(rec, verbose = FALSE)
+  # Final fit!   
+  fit &lt;- model_setup %&gt;% parsnip::fit(formula, data = juice(preps))
+  return(fit)
+}
+```
+
+
+
+
+---
+
+# Step 3. Building a modelling function 
+
+## How do our model configuration looks like?
+
+```
+  #  Random Forest Model Specification (regression)
+  #  
+  #  Main Arguments:
+  #   mtry = mtry
+  #   trees = trees
+  #  
+  #  Engine-Specific Arguments:
+  #   regularization.factor = reg.factor
+  #   regularization.usedepth = depth
+  #  
+  #  Computational engine: ranger 
+
+```
+
+---
+
+# Step 4. Training all models (90) at once -- might be slow (!)
+
+```{r
+
+training_models &lt;- data_tibble %&gt;% 
+  mutate(
+    all_parameters = 
+      map2(parameters, map(train_test, training), 
+           ~list_modify(.x, train = .y)))  %&gt;% 
+  mutate(model_trained = invoke_map(modelling, all_parameters))
+
+```
+
+
+
+
+---
+
+# Which are the best models?
+
+
+- Metrics:
+
+  - Root Mean Squared Error
+  - Total number of variables used in the model
+  - R-squared
+  
+```{r
+rmse &lt;- function(model, test, formula = ridership ~ .,
+        us_hol = timeDate::listHolidays() %&gt;% str_subset("(^US)|(Easter)")){
+  
+  rec &lt;- recipe(formula, data = test) %&gt;% 
+    step_holiday(date, holidays = us_hol) %&gt;%  # Include US holidays
+    step_date(date) %&gt;% 
+    step_rm(date) 
+  
+  preps &lt;- prep(rec, verbose = FALSE)
+  pp &lt;- predict(model, juice(preps))
+  sqrt(mean((pp$.pred - test$ridership)^2))
+}
+
+n_variables &lt;- function(model){
+  length(unique((unlist(model$fit$forest$split.varIDs))))
+}
+```
+  
+
+  
+  
+---
+
+# Step 5. Evaluating models
+
+```r
+results &lt;- training_models %&gt;% 
+  mutate(rmse = map2_dbl(.x = model_trained, .y = map(train_test, testing), rmse), 
+    n_variables = map_int(model_trained, n_variables),
+    rsquared = map_dbl(model_trained, ~{.x$fit$r.squared})) 
+```
+
+
+
+
+&lt;table class="table table-condensed table-hover" style="margin-left: auto; margin-right: auto;"&gt;
+&lt;caption&gt;Mean results per model combination&lt;/caption&gt;
+ &lt;thead&gt;
+  &lt;tr&gt;
+   &lt;th style="text-align:left;"&gt; model &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; rmse &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; n_variables &lt;/th&gt;
+   &lt;th style="text-align:left;"&gt; rsquared &lt;/th&gt;
+  &lt;/tr&gt;
+ &lt;/thead&gt;
+&lt;tbody&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; bagging &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; &lt;span style="display: inline-block; direction: rtl; border-radius: 4px; padding-right: 2px; background-color: lightgreen; width: 60.47%"&gt;1.56&lt;/span&gt; &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 71 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; &lt;span style="display: inline-block; direction: rtl; border-radius: 4px; padding-right: 2px; background-color: lightgreen; width: 100.00%"&gt;0.94&lt;/span&gt; &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; bagging_reg &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.29 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 13.5 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.88 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; bagging_reg_dep &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.58 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; &lt;span style="display: inline-block; direction: rtl; border-radius: 4px; padding-right: 2px; background-color: lightgreen; width: 16.48%"&gt;11.7&lt;/span&gt; &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.83 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; forest &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.12 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 71 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.89 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; reg_forest &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.22 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 26.8 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.88 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; reg_forest_dep &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.31 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 24.4 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.87 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; reg_forest_dep2 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.37 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 25.9 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.86 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; reg_forest2 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.41 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 24.9 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.86 &lt;/td&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+   &lt;td style="text-align:left;"&gt; tree &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 2.41 &lt;/td&gt;
+   &lt;td style="text-align:left;width: 2cm; "&gt; 64.5 &lt;/td&gt;
+   &lt;td style="text-align:left;"&gt; 0.86 &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+
+---
+
+## A closer look at the RMSE
+
+
+
+&lt;img src="img/results.png" width="60%" style="display: block; margin: auto;" /&gt;
+
+
+---
+
+# The final object 
+
+
+```
+# A tibble: 90 x 10
+  index data  train_test model parameters all_parameters model_trained  rmse
+  &lt;int&gt; &lt;lis&gt; &lt;list&gt;     &lt;chr&gt; &lt;list&gt;     &lt;list&gt;         &lt;list&gt;        &lt;dbl&gt;
+1     1 &lt;tib… &lt;split [4… bagg… &lt;named li… &lt;named list [… &lt;fit[+]&gt;       1.44
+2     2 &lt;tib… &lt;split [4… bagg… &lt;named li… &lt;named list [… &lt;fit[+]&gt;       1.44
+3     3 &lt;tib… &lt;split [4… bagg… &lt;named li… &lt;named list [… &lt;fit[+]&gt;       1.56
+4     4 &lt;tib… &lt;split [4… bagg… &lt;named li… &lt;named list [… &lt;fit[+]&gt;       1.60
+5     5 &lt;tib… &lt;split [4… bagg… &lt;named li… &lt;named list [… &lt;fit[+]&gt;       1.50
+# … with 85 more rows, and 2 more variables: n_variables &lt;int&gt;, rsquared &lt;dbl&gt;
+```
+
+---
+
+# Conclusions
+
+.pull-left[
+  - We can build a unique object to store everything at the same time:
+  data, train, test, seeds, hyperparameters, fitted models, results, evaluation metrics, computational details, etc
+
+  - Very useful to quickly compare models
+  - Reproducibility (papers, reports)
+
+]
+
+.pull-right[
+&lt;img src="img/purrrr.jpg" width="70%" style="display: block; margin: auto;" /&gt;
+]
+
+
+---
+
+
+--- 
+ 
+# References
+
+
+&lt;p&gt;&lt;cite&gt;&lt;a id='bib-guided'&gt;&lt;/a&gt;&lt;a href="#cite-guided"&gt;Deng, H. and G. Runger&lt;/a&gt;
+(2013).
+&amp;ldquo;Gene selection with guided regularized random forest&amp;rdquo;.
+In: &lt;em&gt;Pattern Recognition&lt;/em&gt; 46.12, pp. 3483&amp;ndash;3489.&lt;/cite&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;cite&gt;Wundervald, B, A. Parnell, and K. Domijan
+(2020).
+&amp;ldquo;Generalizing Gain Penalization for Feature Selection in Tree-based Models&amp;rdquo;.
+In: &lt;em&gt;arXiv e-prints&lt;/em&gt;, p. arXiv:2006.07515.
+arXiv: 2006.07515 [stat.ML].&lt;/cite&gt;&lt;/p&gt;
+
+
+---
+
+
+class: bottom, center, inverse
+
+&lt;font size="30"&gt;Thanks! &lt;/font&gt;
+
+&lt;img src= "https://s3.amazonaws.com/kleebtronics-media/img/icons/github-white.png", width="50", height="50",  align="middle"&gt; 
+
+&lt;b&gt;
+
+ &lt;color="FFFFFF"&gt;  https://github.com/brunaw &lt;/color&gt;
+    </textarea>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script src="https://platform.twitter.com/widgets.js"></script>
+<script>var slideshow = remark.create({
+"ratio": "16:9",
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function() {
+  var d = document, s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})();</script>
+
+<script>
+(function() {
+  var i, text, code, codes = document.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+})();
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
